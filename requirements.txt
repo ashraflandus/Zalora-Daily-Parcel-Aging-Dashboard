@@ -1,0 +1,4 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+asyncmy>=0.2.9          # OceanBase / MySQL-wire driver (NOT asyncpg/Postgres)
+httpx>=0.27             # Metabase MCP calls
