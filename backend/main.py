@@ -268,6 +268,21 @@ def _rpc_body(resp: httpx.Response) -> dict:
     return resp.json() if resp.content else {}
 
 
+async def _refusal_reason(mcp_status: int) -> str:
+    """Tell a bad key apart from an MCP endpoint that won't take API keys, by trying the key on the REST API."""
+    try:
+        r = await _http.get(METABASE_URL + "/api/user/current", headers={"x-api-key": METABASE_API_KEY})
+        rest = r.status_code
+    except httpx.HTTPError:
+        rest = None
+    if rest == 200:
+        return (f"Metabase accepts the API key on its REST API but its MCP endpoint ({METABASE_MCP_PATH}) "
+                f"refused it (HTTP {mcp_status}); the MCP endpoint may not allow API-key access")
+    if rest in (401, 403):
+        return f"Metabase refused the API key (HTTP {rest}); check METABASE_API_KEY"
+    return f"Metabase's MCP endpoint refused the API key (HTTP {mcp_status})"
+
+
 async def _rpc(method: str, params: dict | None = None, notify: bool = False) -> dict:
     global _rpc_id
     _rpc_id += 1
@@ -276,7 +291,7 @@ async def _rpc(method: str, params: dict | None = None, notify: bool = False) ->
         body["id"] = _rpc_id
     resp = await _http.post(METABASE_URL + METABASE_MCP_PATH, json=body, headers=_mcp_headers())
     if resp.status_code in (401, 403):
-        raise HTTPException(502, "Metabase refused the API key")
+        raise HTTPException(502, await _refusal_reason(resp.status_code))
     if resp.status_code == 404 and _mcp_session:
         raise LookupError("session expired")
     resp.raise_for_status()
