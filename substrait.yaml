@@ -1,0 +1,8 @@
+description: >
+  Zalora Daily Parcel Monitoring (Aging) Dashboard for Ninja Van Malaysia: ages every open
+  Zalora parcel from the daily Active Orders export against the Zalora SLA (Forward, RTS,
+  RPU, pending pickup), builds the Last Mile "Pending Zalora Shipments" daily email, breaks
+  breaches down by department, and tracks NDD/SDD on-time % from Metabase. Used by the
+  account management and ops teams; SLA settings and daily files are kept per day.
+
+database: oceanbase

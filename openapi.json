@@ -1,0 +1,181 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Zalora Daily Parcel Aging Dashboard",
+    "version": "1.0.0",
+    "description": "Backend for the Zalora Daily Parcel Aging Dashboard: a JSON document store for daily aging snapshots, SLA versions, the update log, settings and NDD/SDD on-time pulls, a store for uploaded daily files, the signed-in viewer, and a proxy to Metabase's MCP query tool."
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Readiness probe; returns ok when the server is up.",
+        "operationId": "health",
+        "responses": {
+          "200": {"description": "Server is up", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Health"}}}}
+        }
+      }
+    },
+    "/api/me": {
+      "get": {
+        "summary": "Returns the signed-in viewer (from Google SSO headers) and whether they may edit.",
+        "operationId": "me",
+        "responses": {
+          "200": {"description": "Current viewer", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Me"}}}}
+        }
+      }
+    },
+    "/api/db/{collection}": {
+      "get": {
+        "summary": "Lists documents in a collection changed since a cursor, plus every current document id.",
+        "operationId": "listDocs",
+        "parameters": [
+          {"$ref": "#/components/parameters/Collection"},
+          {"name": "since", "in": "query", "required": false, "description": "Cursor from a previous call; 0 returns every document.", "schema": {"type": "integer", "default": 0}}
+        ],
+        "responses": {
+          "200": {"description": "Changed documents and current ids", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/DocPage"}}}},
+          "404": {"description": "Unknown collection"},
+          "503": {"description": "Database not configured"}
+        }
+      }
+    },
+    "/api/db/{collection}/{doc_id}": {
+      "get": {
+        "summary": "Reads one document.",
+        "operationId": "getDoc",
+        "parameters": [
+          {"$ref": "#/components/parameters/Collection"},
+          {"$ref": "#/components/parameters/DocId"}
+        ],
+        "responses": {
+          "200": {"description": "The document", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Doc"}}}},
+          "404": {"description": "Unknown collection or no such document"},
+          "503": {"description": "Database not configured"}
+        }
+      },
+      "put": {
+        "summary": "Creates or replaces one document (edit access required).",
+        "operationId": "setDoc",
+        "parameters": [
+          {"$ref": "#/components/parameters/Collection"},
+          {"$ref": "#/components/parameters/DocId"}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object", "additionalProperties": true, "description": "The whole document (at most 2 MB of JSON)."}}}
+        },
+        "responses": {
+          "200": {"description": "Saved", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ok"}}}},
+          "403": {"description": "Edit access needed"},
+          "413": {"description": "Document too large"}
+        }
+      },
+      "delete": {
+        "summary": "Deletes one document (edit access required).",
+        "operationId": "deleteDoc",
+        "parameters": [
+          {"$ref": "#/components/parameters/Collection"},
+          {"$ref": "#/components/parameters/DocId"}
+        ],
+        "responses": {
+          "200": {"description": "Deleted", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Ok"}}}},
+          "403": {"description": "Edit access needed"}
+        }
+      }
+    },
+    "/api/blobs": {
+      "post": {
+        "summary": "Stores one uploaded file (the raw request body, such as a daily Active Orders CSV) and returns its id (edit access required).",
+        "operationId": "uploadBlob",
+        "requestBody": {
+          "required": true,
+          "content": {"*/*": {"schema": {"type": "string", "format": "binary", "description": "File contents, at most 20 MB; the Content-Type header is kept."}}}
+        },
+        "responses": {
+          "200": {"description": "Stored", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BlobRef"}}}},
+          "400": {"description": "Empty file"},
+          "403": {"description": "Edit access needed"},
+          "413": {"description": "File too large"},
+          "503": {"description": "Database not configured"}
+        }
+      }
+    },
+    "/api/blobs/{blob_id}": {
+      "get": {
+        "summary": "Returns one stored file with its original content type.",
+        "operationId": "getBlob",
+        "parameters": [
+          {"name": "blob_id", "in": "path", "required": true, "description": "Id returned by the upload.", "schema": {"type": "string", "maxLength": 32}}
+        ],
+        "responses": {
+          "200": {"description": "The file contents", "content": {"*/*": {"schema": {"type": "string", "format": "binary"}}}},
+          "400": {"description": "Bad file id"},
+          "404": {"description": "No such file"}
+        }
+      }
+    },
+    "/api/metabase/query": {
+      "post": {
+        "summary": "Runs one page of an MBQL query, or fetches the next page by continuation token, through Metabase's MCP query tool (edit access required).",
+        "operationId": "metabaseQuery",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MbQuery"}}}
+        },
+        "responses": {
+          "200": {"description": "The Metabase tool result", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/MbResult"}}}},
+          "403": {"description": "Edit access needed"},
+          "502": {"description": "Metabase refused the API key or the session could not be opened"},
+          "503": {"description": "Metabase is not configured"}
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Collection": {"name": "collection", "in": "path", "required": true, "schema": {"type": "string", "enum": ["snapshots", "rawChunks", "slaVersions", "log", "actions", "config", "otp", "otpr", "otpf"]}},
+      "DocId": {"name": "doc_id", "in": "path", "required": true, "description": "Document id, e.g. 2026-10-28 for a saved day.", "schema": {"type": "string", "maxLength": 191}}
+    },
+    "schemas": {
+      "Health": {"type": "object", "required": ["status"], "properties": {"status": {"type": "string"}}},
+      "Me": {
+        "type": "object",
+        "required": ["email", "user", "can_write"],
+        "properties": {
+          "email": {"type": ["string", "null"]},
+          "user": {"type": ["string", "null"]},
+          "can_write": {"type": "boolean"}
+        }
+      },
+      "Doc": {
+        "type": "object",
+        "required": ["id", "data"],
+        "properties": {"id": {"type": "string"}, "data": {"type": "object", "additionalProperties": true}}
+      },
+      "DocPage": {
+        "type": "object",
+        "required": ["docs", "ids", "cursor"],
+        "properties": {
+          "docs": {"type": "array", "items": {"$ref": "#/components/schemas/Doc"}},
+          "ids": {"type": "array", "items": {"type": "string"}},
+          "cursor": {"type": "integer", "description": "Pass as `since` on the next call."}
+        }
+      },
+      "Ok": {"type": "object", "required": ["ok"], "properties": {"ok": {"type": "boolean"}}},
+      "BlobRef": {"type": "object", "required": ["id", "size"], "properties": {"id": {"type": "string"}, "size": {"type": "integer", "description": "Original size in bytes."}}},
+      "MbQuery": {
+        "type": "object",
+        "properties": {
+          "query": {"type": ["object", "null"], "additionalProperties": true, "description": "MBQL 5 query (lib/type mbql/query)."},
+          "query_handle": {"type": ["string", "null"]},
+          "continuation_token": {"type": ["string", "null"]}
+        }
+      },
+      "MbResult": {
+        "type": "object",
+        "required": ["payload"],
+        "properties": {"payload": {"description": "Metabase's result: data.cols, data.rows and continuation_token, or status failed with error."}}
+      }
+    }
+  }
+}
