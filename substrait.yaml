@@ -6,3 +6,7 @@ description: >
   account management and ops teams; SLA settings and daily files are kept per day.
 
 database: oceanbase
+
+# Skill/plugin version this app was last deployed with — stamped by
+# /substrait:deploy; do not edit by hand.
+scaffold_version: 2026.09.22.075110
