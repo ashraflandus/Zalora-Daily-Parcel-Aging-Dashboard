@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Import saved data</title>
+<style>
+:root{--red:#C31524;--text:#3F3F3F;--muted:#8F8A8A;--line:#E4E0E0;--bg:#EFEFEF;--card:#fff}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 Montserrat,Arial,sans-serif}
+main{max-width:640px;margin:32px auto;padding:0 16px}
+.card{background:var(--card);border-radius:10px;padding:18px 20px;border-top:3px solid var(--red)}
+h1{font-size:20px;margin:0 0 6px}
+p{margin:6px 0}
+.note{color:var(--muted);font-size:13px}
+button{background:var(--red);color:#fff;border:0;border-radius:7px;padding:8px 14px;font:600 13px inherit;cursor:pointer}
+button[disabled]{opacity:.5;cursor:not-allowed}
+label{display:flex;gap:8px;align-items:center;margin:10px 0}
+pre{background:#F6F4F4;border-radius:8px;padding:10px;white-space:pre-wrap;max-height:320px;overflow:auto;font-size:12px}
+</style>
+</head>
+<body>
+<main><div class="card">
+  <h1>Import saved data</h1>
+  <p>Loads an export bundle (saved days, SLA versions, update log, on-time pulls and remarks) into this dashboard's database. Edit access is needed.</p>
+  <p class="note">Documents that already exist here are skipped unless you tick overwrite.</p>
+  <label><input type="file" id="file" accept=".json,application/json"></label>
+  <label><input type="checkbox" id="over"> Overwrite documents that already exist</label>
+  <button id="go" disabled>Import</button>
+  <pre id="log" hidden></pre>
+</div></main>
+<script>
+const $=id=>document.getElementById(id), log=t=>{$('log').hidden=false;$('log').textContent+=t+'\n';};
+let bundle=null;
+$('file').addEventListener('change',async e=>{
+  $('log').textContent='';bundle=null;$('go').disabled=true;
+  try{bundle=JSON.parse(await e.target.files[0].text());}catch(err){log('Not a valid JSON file: '+err.message);return;}
+  Object.keys(bundle).forEach(c=>log(c+': '+Object.keys(bundle[c]).length+' documents'));
+  $('go').disabled=false;
+});
+$('go').addEventListener('click',async()=>{
+  $('go').disabled=true;const over=$('over').checked;let ok=0,skip=0,fail=0;
+  for(const c of Object.keys(bundle)){
+    let have=new Set();
+    try{const r=await fetch('/api/db/'+encodeURIComponent(c)+'?since=0');if(!r.ok)throw new Error(r.status+' '+r.statusText);have=new Set((await r.json()).ids);}
+    catch(err){log(c+': could not read existing documents ('+err.message+'), skipped');continue;}
+    for(const [id,data] of Object.entries(bundle[c])){
+      if(have.has(id)&&!over){skip++;continue;}
+      const r=await fetch('/api/db/'+encodeURIComponent(c)+'/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+      if(r.ok)ok++;else{fail++;let d='';try{d=(await r.json()).detail;}catch(e){}log('Failed '+c+'/'+id+': '+r.status+' '+(d||r.statusText));}
+    }
+  }
+  log('Done: '+ok+' imported, '+skip+' skipped (already here), '+fail+' failed.');
+  $('go').disabled=false;
+});
+</script>
+</body>
+</html>
